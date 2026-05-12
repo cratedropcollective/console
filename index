@@ -1,0 +1,355 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Crate Drop | Pro Console</title>
+    <script src="https://cdn.tailwindcss.com"></script>
+    <script defer src="https://unpkg.com/alpinejs@3.x.x/dist/cdn.min.js"></script>
+    <script src="https://cdnjs.cloudflare.com/ajax/libs/html2canvas/1.4.1/html2canvas.min.js"></script>
+    <!-- ADDED: SheetJS for Multi-Sheet Excel Export -->
+    <script src="https://cdn.sheetjs.com/xlsx-0.20.0/package/dist/xlsx.full.min.js"></script>
+    <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.0.0/css/all.min.css">
+    <style>
+        @import url('https://fonts.googleapis.com/css2?family=Inter:wght@400;600;800;900&display=swap');
+        body { font-family: 'Inter', sans-serif; background-color: #05070a; color: #f8fafc; }
+        .glass { background: #111827; border: 1px solid #1f2937; }
+        .input-huge { font-size: 1.5rem !important; font-weight: 900 !important; padding: 1.25rem !important; }
+        .label-huge { font-size: 0.85rem !important; font-weight: 900 !important; letter-spacing: 0.1em; color: #64748b; margin-bottom: 0.5rem; display: block; text-transform: uppercase; }
+        ::-webkit-scrollbar { width: 8px; }
+        ::-webkit-scrollbar-thumb { background: #334155; border-radius: 10px; }
+    </style>
+</head>
+<body class="p-4 md:p-10">
+
+<div x-data="crateDropApp()" x-init="init()" class="max-w-[1600px] mx-auto">
+    
+    <!-- HEADER -->
+    <div class="flex flex-col lg:flex-row justify-between items-start lg:items-center mb-12 gap-6">
+        <div>
+            <h1 class="text-6xl font-black tracking-tighter italic">CRATE <span class="text-blue-500">DROP</span></h1>
+            <p class="text-slate-500 font-black uppercase tracking-[0.4em] text-sm">Collective Master Terminal</p>
+        </div>
+        <div class="flex items-center gap-6 bg-slate-900 p-6 rounded-3xl border border-slate-800">
+            <div class="text-right">
+                <p class="text-[10px] font-black text-slate-500 uppercase tracking-widest">Total DP Collected</p>
+                <p class="text-4xl font-black text-emerald-400">₱<span x-text="totalReceivables.toLocaleString()"></span></p>
+            </div>
+            <div class="flex flex-col gap-2">
+                <!-- UPDATED BUTTON TEXT -->
+                <button @click="exportToExcel()" class="text-[10px] bg-blue-600 hover:bg-white hover:text-black px-4 py-2 rounded-lg font-black transition">EXPORT EXCEL (.XLSX)</button>
+                <button @click="clearDB()" class="text-[10px] text-red-500 hover:text-red-400 font-black">WIPE ALL DATA</button>
+            </div>
+        </div>
+    </div>
+
+    <div class="grid grid-cols-1 lg:grid-cols-12 gap-10">
+        
+        <!-- LEFT: INPUT & CURRENT SESSION -->
+        <div class="lg:col-span-5 space-y-8">
+            <div class="glass p-10 rounded-[3rem] shadow-2xl border-t-8 border-blue-500">
+                <h2 class="text-3xl font-black mb-8 flex items-center gap-4">
+                    <i class="fas fa-user-tag text-blue-500"></i>
+                    <span x-text="editingId ? 'Edit Session' : 'New Session'"></span>
+                </h2>
+
+                <div class="space-y-8">
+                    <div>
+                        <label class="label-huge">Customer Full Name</label>
+                        <input type="text" x-model="currentLog.name" class="w-full input-huge rounded-2xl bg-slate-800 border-2 border-slate-700 text-white" placeholder="JUAN DELA CRUZ">
+                    </div>
+
+                    <div class="bg-blue-600/5 p-8 rounded-3xl border-2 border-blue-500/20 space-y-6">
+                        <label class="label-huge text-blue-400">Select Product to Add</label>
+                        <select x-model="itemInput.id" @change="syncItem" class="w-full input-huge rounded-2xl bg-slate-900 border-2 border-slate-700">
+                            <option value="">-- SEARCH INVENTORY --</option>
+                            <template x-for="p in inventory" :key="p.id">
+                                <option :value="p.id" x-text="p.name"></option>
+                            </template>
+                        </select>
+
+                        <div class="grid grid-cols-3 gap-6">
+                            <div class="col-span-1">
+                                <label class="label-huge">Format</label>
+                                <select x-model="itemInput.isCase" @change="syncItem" class="w-full p-4 rounded-xl font-black bg-slate-900 border-2 border-slate-700">
+                                    <option :value="false">UNIT</option>
+                                    <option :value="true">CASE</option>
+                                </select>
+                            </div>
+                            <div class="col-span-1">
+                                <label class="label-huge">Quantity</label>
+                                <input type="number" x-model.number="itemInput.qty" class="w-full p-4 rounded-xl font-black text-center bg-slate-900 border-2 border-slate-700 text-xl">
+                            </div>
+                            <div class="flex items-end">
+                                <button @click="addItem" :disabled="!itemInput.id" class="w-full h-[62px] bg-blue-600 hover:bg-white hover:text-blue-600 text-white font-black rounded-xl transition-all text-xl shadow-lg shadow-blue-500/20">ADD</button>
+                            </div>
+                        </div>
+                    </div>
+
+                    <div class="space-y-3">
+                        <label class="label-huge">Session Items (<span x-text="currentLog.items.length"></span>)</label>
+                        <template x-for="(item, index) in currentLog.items" :key="index">
+                            <div class="flex justify-between items-center p-5 bg-slate-900 rounded-2xl border border-slate-800 group">
+                                <div class="min-w-0 flex-grow pr-4">
+                                    <p class="font-black text-lg uppercase tracking-tight truncate" x-text="item.name"></p>
+                                    <p class="text-sm font-bold text-blue-400 uppercase">
+                                        <span x-text="item.qty"></span>x 
+                                        <span x-text="item.isCase ? 'CASE' : 'UNIT'"></span>
+                                    </p>
+                                </div>
+                                <button @click="removeItem(index)" class="text-red-900 group-hover:text-red-500 p-2 transition flex-shrink-0"><i class="fas fa-trash-alt"></i></button>
+                            </div>
+                        </template>
+                    </div>
+
+                    <button @click="saveLog" :disabled="!currentLog.name || currentLog.items.length === 0" class="w-full bg-white text-black font-black py-6 rounded-[2rem] text-2xl uppercase tracking-tighter hover:bg-blue-500 hover:text-white transition-all shadow-2xl">
+                        <span x-text="editingId ? 'Update Master Log' : 'Commit to Database'"></span>
+                    </button>
+                </div>
+            </div>
+        </div>
+
+        <!-- RIGHT: DATABASE -->
+        <div class="lg:col-span-7 flex flex-col h-full">
+            <div class="flex flex-col sm:flex-row justify-between items-start sm:items-end gap-4 mb-4 px-4 shrink-0">
+                <h3 class="text-2xl font-black text-slate-500 uppercase tracking-widest">Database History</h3>
+                <div class="w-full sm:w-1/2 md:w-2/5">
+                    <select x-model="filterProduct" class="w-full bg-slate-800 border border-slate-600 text-white rounded-xl p-3 font-bold text-xs uppercase tracking-wide focus:border-blue-500 outline-none shadow-lg">
+                        <option value="">SHOW ALL PRODUCTS</option>
+                        <template x-for="p in uniqueLoggedProducts" :key="p.id">
+                            <option :value="p.id" x-text="p.name"></option>
+                        </template>
+                    </select>
+                </div>
+            </div>
+
+            <!-- Dynamic Aggregation Banner -->
+            <div x-show="filterProduct" style="display: none;" class="px-4 mb-6 shrink-0">
+                <div class="bg-blue-900/20 border-2 border-blue-600/30 rounded-2xl p-4 flex flex-col sm:flex-row justify-between items-center gap-4 text-center sm:text-left">
+                    <span class="text-blue-400 font-black uppercase text-[10px] tracking-widest"><i class="fas fa-filter mr-2"></i> Pooled Inventory</span>
+                    <div class="flex gap-6 items-center">
+                        <div>
+                            <p class="text-[10px] text-blue-500 uppercase font-bold tracking-widest">Total Units</p>
+                            <p class="text-2xl font-black text-white leading-none" x-text="filteredProductTotals.units"></p>
+                        </div>
+                        <div class="w-px h-8 bg-blue-800/50 hidden sm:block"></div>
+                        <div>
+                            <p class="text-[10px] text-blue-500 uppercase font-bold tracking-widest">Total Cases</p>
+                            <p class="text-2xl font-black text-white leading-none" x-text="filteredProductTotals.cases"></p>
+                        </div>
+                    </div>
+                </div>
+            </div>
+
+            <div class="grid grid-cols-1 gap-6 max-h-[1200px] overflow-y-auto pr-4 flex-grow relative">
+                <template x-for="log in filteredLogs" :key="log.id">
+                    <div class="glass p-8 rounded-[2.5rem] flex flex-col xl:flex-row justify-between items-start xl:items-center gap-8 group hover:border-blue-500 transition-all border-l-8 border-l-slate-800 hover:border-l-blue-500">
+                        <div class="flex-grow min-w-0 w-full">
+                            <div class="flex items-center gap-3 mb-2">
+                                <span class="bg-blue-500/10 text-blue-500 text-[10px] font-black px-3 py-1 rounded-full uppercase" x-text="log.timestamp"></span>
+                            </div>
+                            <h4 class="text-3xl sm:text-4xl font-black uppercase text-white tracking-tighter truncate" x-text="log.name"></h4>
+                            <div class="flex flex-col gap-3 mt-4">
+                                <template x-for="i in log.items">
+                                    <div :class="[
+                                        i.isCase ? 'bg-blue-900/40 border-blue-600/50 text-blue-100' : 'bg-slate-800 border-slate-600 text-slate-200',
+                                        filterProduct && i.id !== filterProduct ? 'opacity-30' : 'opacity-100'
+                                    ]" class="px-4 py-3 rounded-xl border flex flex-row items-center font-black uppercase tracking-wide min-w-0 transition-opacity duration-300">
+                                        <div class="flex items-center flex-shrink-0">
+                                            <span class="text-xl mr-2" x-text="i.qty"></span>
+                                            <span class="text-xs sm:text-sm mr-3" x-text="i.isCase ? 'CASE(S)' : 'UNIT(S)'"></span>
+                                        </div>
+                                        <span class="text-xs sm:text-sm truncate flex-grow min-w-0" x-text="i.name"></span>
+                                    </div>
+                                </template>
+                            </div>
+                        </div>
+                        <div class="text-left xl:text-right flex flex-row xl:flex-col items-center xl:items-end justify-between xl:justify-start w-full xl:w-auto min-w-[220px] flex-shrink-0 pt-4 xl:pt-0 border-t border-slate-800 xl:border-none">
+                            <div class="xl:mb-6">
+                                <p class="text-[10px] font-black text-slate-500 uppercase tracking-widest">Total DP Paid</p>
+                                <p class="text-3xl sm:text-4xl font-black text-white tracking-tight">₱<span x-text="log.totalDP.toLocaleString()"></span></p>
+                            </div>
+                            <div class="flex gap-2">
+                                <button @click="generateSlip(log)" class="bg-blue-600 text-white px-4 py-2 rounded-xl font-black text-[10px] uppercase shadow-lg">Slip</button>
+                                <button @click="editLog(log)" class="bg-slate-800 text-white px-4 py-2 rounded-xl font-black text-[10px] uppercase">Edit</button>
+                                <button @click="deleteLog(log.id)" class="text-red-900 hover:text-red-500 px-2"><i class="fas fa-times-circle text-lg"></i></button>
+                            </div>
+                        </div>
+                    </div>
+                </template>
+            </div>
+        </div>
+    </div>
+
+</div>
+
+<script>
+function crateDropApp() {
+    return {
+        inventory: [],
+        logs: [],
+        filterProduct: '',
+        editingId: null,
+        currentLog: { name: '', items: [] },
+        itemInput: { id: '', name: '', qty: 1, isCase: false, price: 0, unitsPerCase: 1, eta: 'TBA' },
+        receiptData: { name: '', timestamp: '', items: [], totalOrder: 0, totalDP: 0, totalBalance: 0 },
+
+        async init() {
+            const saved = localStorage.getItem('cd_master_v2');
+            if (saved) this.logs = JSON.parse(saved);
+
+            const tsvUrl = "https://docs.google.com/spreadsheets/d/e/2PACX-1vSQBLjsB__nTteTD8pPY7wvfQEQUCqLstkfUb8lgfOV_NpVwraiUU07VxZrKyWsmVPE1vyLtv_6ED9Y/pub?gid=0&single=true&output=tsv";
+            try {
+                const response = await fetch(tsvUrl);
+                const text = await response.text();
+                const rows = text.trim().split('\n').slice(1);
+                this.inventory = rows.map(row => {
+                    const cols = row.split('\t').map(c => c.trim());
+                    const unitPrice = parseFloat(cols[4]?.replace(/[^0-9.]/g, '')) || 0;
+                    const upc = parseInt(cols[5]) || 1;
+                    return { id: cols[0], name: cols[1], unitPrice, unitsPerCase: upc, casePrice: unitPrice * upc, eta: cols[6] || 'TBA' };
+                });
+            } catch (e) { console.error("Fetch Failed", e); }
+        },
+
+        get uniqueLoggedProducts() {
+            const map = new Map();
+            this.logs.forEach(l => l.items.forEach(i => map.set(i.id, i.name)));
+            return Array.from(map, ([id, name]) => ({ id, name })).sort((a, b) => a.name.localeCompare(b.name));
+        },
+
+        get filteredLogs() {
+            if (!this.filterProduct) return this.logs;
+            return this.logs.filter(l => l.items.some(i => i.id === this.filterProduct));
+        },
+
+        get filteredProductTotals() {
+            if (!this.filterProduct) return { units: 0, cases: 0 };
+            let u = 0, c = 0;
+            this.filteredLogs.forEach(l => l.items.forEach(i => {
+                if (i.id === this.filterProduct) {
+                    if (i.isCase) { c += i.qty; u += (i.qty * i.unitsPerCase); }
+                    else { u += i.qty; }
+                }
+            }));
+            return { units: u, cases: c };
+        },
+
+        // --- NEW MULTI-SHEET EXPORT LOGIC ---
+        exportToExcel() {
+            // Sheet 1: Detailed Order Log
+            const orderData = [];
+            this.logs.forEach(l => {
+                l.items.forEach(i => {
+                    orderData.push({
+                        "Date": l.timestamp,
+                        "Customer": l.name,
+                        "Product": i.name,
+                        "Format": i.isCase ? "CASE" : "UNIT",
+                        "Qty Ordered": i.qty,
+                        "Raw Units Total": i.isCase ? (i.qty * i.unitsPerCase) : i.qty,
+                        "Line Total (PHP)": i.price * i.qty,
+                        "DP Paid (30%)": Math.ceil(i.price * i.qty * 0.3),
+                        "Remaining Balance": (i.price * i.qty) - Math.ceil(i.price * i.qty * 0.3)
+                    });
+                });
+            });
+
+            // Sheet 2: Inventory Summary (Aggregated per product)
+            const summaryMap = {};
+            this.logs.forEach(l => {
+                l.items.forEach(i => {
+                    if (!summaryMap[i.id]) {
+                        summaryMap[i.id] = { "Product Name": i.name, "Total Pooled Units": 0, "Total Direct Cases": 0 };
+                    }
+                    if (i.isCase) {
+                        summaryMap[i.id]["Total Direct Cases"] += i.qty;
+                        summaryMap[i.id]["Total Pooled Units"] += (i.qty * i.unitsPerCase);
+                    } else {
+                        summaryMap[i.id]["Total Pooled Units"] += i.qty;
+                    }
+                });
+            });
+            const summaryData = Object.values(summaryMap);
+
+            // Create Workbook
+            const wb = XLSX.utils.book_new();
+            const wsOrders = XLSX.utils.json_to_sheet(orderData);
+            const wsSummary = XLSX.utils.json_to_sheet(summaryData);
+
+            XLSX.utils.book_append_sheet(wb, wsOrders, "Master Order Log");
+            XLSX.utils.book_append_sheet(wb, wsSummary, "Inventory Summary");
+
+            // Write File
+            XLSX.writeFile(wb, `CrateDrop_Master_Report_${new Date().toISOString().split('T')[0]}.xlsx`);
+        },
+
+        syncItem() {
+            const p = this.inventory.find(i => i.id == this.itemInput.id);
+            if (p) {
+                this.itemInput.name = p.name;
+                this.itemInput.unitsPerCase = p.unitsPerCase;
+                this.itemInput.price = this.itemInput.isCase ? p.casePrice : p.unitPrice;
+                this.itemInput.eta = p.eta;
+            }
+        },
+
+        addItem() {
+            this.currentLog.items.push({...this.itemInput});
+            this.itemInput.id = '';
+            this.itemInput.qty = 1;
+        },
+
+        removeItem(index) { this.currentLog.items.splice(index, 1); },
+
+        saveLog() {
+            const total = this.currentLog.items.reduce((sum, i) => sum + (i.price * i.qty), 0);
+            const dp = Math.ceil(total * 0.3);
+            const payload = {
+                ...this.currentLog,
+                id: this.editingId || Date.now(),
+                timestamp: this.editingId ? this.logs.find(l => l.id == this.editingId).timestamp : new Date().toLocaleString(),
+                totalOrder: total, totalDP: dp, totalBalance: total - dp
+            };
+            if (this.editingId) {
+                const idx = this.logs.findIndex(l => l.id == this.editingId);
+                this.logs[idx] = payload;
+            } else { this.logs.unshift(payload); }
+            this.persist();
+            this.resetSession();
+        },
+
+        editLog(log) {
+            this.editingId = log.id;
+            this.currentLog = JSON.parse(JSON.stringify(log));
+            window.scrollTo({ top: 0, behavior: 'smooth' });
+        },
+
+        deleteLog(id) {
+            if (confirm('Delete permanently?')) { this.logs = this.logs.filter(l => l.id !== id); this.persist(); }
+        },
+
+        async generateSlip(log) {
+            this.receiptData = log;
+            await this.$nextTick();
+            const canvas = await html2canvas(document.getElementById('receipt-canvas'), { scale: 2 });
+            const link = document.createElement('a');
+            link.download = `Slip_${log.name.replace(/\s+/g, '_')}.png`;
+            link.href = canvas.toDataURL();
+            link.click();
+        },
+
+        resetSession() {
+            this.editingId = null;
+            this.currentLog = { name: '', items: [] };
+            this.itemInput = { id: '', name: '', qty: 1, isCase: false, price: 0, unitsPerCase: 1, eta: 'TBA' };
+        },
+
+        persist() { localStorage.setItem('cd_master_v2', JSON.stringify(this.logs)); },
+        get totalReceivables() { return this.logs.reduce((sum, l) => sum + l.totalDP, 0); },
+        clearDB() { if (confirm('Wipe all data?')) { this.logs = []; this.persist(); } }
+    }
+}
+</script>
+</body>
+</html>
