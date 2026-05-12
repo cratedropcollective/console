@@ -7,7 +7,6 @@
     <script src="https://cdn.tailwindcss.com"></script>
     <script defer src="https://unpkg.com/alpinejs@3.x.x/dist/cdn.min.js"></script>
     <script src="https://cdnjs.cloudflare.com/ajax/libs/html2canvas/1.4.1/html2canvas.min.js"></script>
-    <!-- ADDED: SheetJS for Multi-Sheet Excel Export -->
     <script src="https://cdn.sheetjs.com/xlsx-0.20.0/package/dist/xlsx.full.min.js"></script>
     <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.0.0/css/all.min.css">
     <style>
@@ -18,11 +17,14 @@
         .label-huge { font-size: 0.85rem !important; font-weight: 900 !important; letter-spacing: 0.1em; color: #64748b; margin-bottom: 0.5rem; display: block; text-transform: uppercase; }
         ::-webkit-scrollbar { width: 8px; }
         ::-webkit-scrollbar-thumb { background: #334155; border-radius: 10px; }
+        
+        /* Ensures the canvas is hidden from the UI but readable by the script */
+        #receipt-gate { position: absolute; left: -9999px; top: 0; }
     </style>
 </head>
-<body class="p-4 md:p-10">
+<body class="p-4 md:p-10" x-data="crateDropApp()" x-init="init()">
 
-<div x-data="crateDropApp()" x-init="init()" class="max-w-[1600px] mx-auto">
+<div class="max-w-[1600px] mx-auto">
     
     <!-- HEADER -->
     <div class="flex flex-col lg:flex-row justify-between items-start lg:items-center mb-12 gap-6">
@@ -36,7 +38,6 @@
                 <p class="text-4xl font-black text-emerald-400">₱<span x-text="totalReceivables.toLocaleString()"></span></p>
             </div>
             <div class="flex flex-col gap-2">
-                <!-- UPDATED BUTTON TEXT -->
                 <button @click="exportToExcel()" class="text-[10px] bg-blue-600 hover:bg-white hover:text-black px-4 py-2 rounded-lg font-black transition">EXPORT EXCEL (.XLSX)</button>
                 <button @click="clearDB()" class="text-[10px] text-red-500 hover:text-red-400 font-black">WIPE ALL DATA</button>
             </div>
@@ -45,7 +46,7 @@
 
     <div class="grid grid-cols-1 lg:grid-cols-12 gap-10">
         
-        <!-- LEFT: INPUT & CURRENT SESSION -->
+        <!-- LEFT: INPUT SECTION -->
         <div class="lg:col-span-5 space-y-8">
             <div class="glass p-10 rounded-[3rem] shadow-2xl border-t-8 border-blue-500">
                 <h2 class="text-3xl font-black mb-8 flex items-center gap-4">
@@ -71,9 +72,9 @@
                         <div class="grid grid-cols-3 gap-6">
                             <div class="col-span-1">
                                 <label class="label-huge">Format</label>
-                                <select x-model="itemInput.isCase" @change="syncItem" class="w-full p-4 rounded-xl font-black bg-slate-900 border-2 border-slate-700">
-                                    <option :value="false">UNIT</option>
-                                    <option :value="true">CASE</option>
+                                <select :value="itemInput.isCase" @change="itemInput.isCase = ($event.target.value === 'true'); syncItem()" class="w-full p-4 rounded-xl font-black bg-slate-900 border-2 border-slate-700">
+                                    <option value="false">UNIT</option>
+                                    <option value="true">CASE</option>
                                 </select>
                             </div>
                             <div class="col-span-1">
@@ -109,7 +110,7 @@
             </div>
         </div>
 
-        <!-- RIGHT: DATABASE -->
+        <!-- RIGHT: DATABASE HISTORY -->
         <div class="lg:col-span-7 flex flex-col h-full">
             <div class="flex flex-col sm:flex-row justify-between items-start sm:items-end gap-4 mb-4 px-4 shrink-0">
                 <h3 class="text-2xl font-black text-slate-500 uppercase tracking-widest">Database History</h3>
@@ -123,24 +124,6 @@
                 </div>
             </div>
 
-            <!-- Dynamic Aggregation Banner -->
-            <div x-show="filterProduct" style="display: none;" class="px-4 mb-6 shrink-0">
-                <div class="bg-blue-900/20 border-2 border-blue-600/30 rounded-2xl p-4 flex flex-col sm:flex-row justify-between items-center gap-4 text-center sm:text-left">
-                    <span class="text-blue-400 font-black uppercase text-[10px] tracking-widest"><i class="fas fa-filter mr-2"></i> Pooled Inventory</span>
-                    <div class="flex gap-6 items-center">
-                        <div>
-                            <p class="text-[10px] text-blue-500 uppercase font-bold tracking-widest">Total Units</p>
-                            <p class="text-2xl font-black text-white leading-none" x-text="filteredProductTotals.units"></p>
-                        </div>
-                        <div class="w-px h-8 bg-blue-800/50 hidden sm:block"></div>
-                        <div>
-                            <p class="text-[10px] text-blue-500 uppercase font-bold tracking-widest">Total Cases</p>
-                            <p class="text-2xl font-black text-white leading-none" x-text="filteredProductTotals.cases"></p>
-                        </div>
-                    </div>
-                </div>
-            </div>
-
             <div class="grid grid-cols-1 gap-6 max-h-[1200px] overflow-y-auto pr-4 flex-grow relative">
                 <template x-for="log in filteredLogs" :key="log.id">
                     <div class="glass p-8 rounded-[2.5rem] flex flex-col xl:flex-row justify-between items-start xl:items-center gap-8 group hover:border-blue-500 transition-all border-l-8 border-l-slate-800 hover:border-l-blue-500">
@@ -151,32 +134,95 @@
                             <h4 class="text-3xl sm:text-4xl font-black uppercase text-white tracking-tighter truncate" x-text="log.name"></h4>
                             <div class="flex flex-col gap-3 mt-4">
                                 <template x-for="i in log.items">
-                                    <div :class="[
-                                        i.isCase ? 'bg-blue-900/40 border-blue-600/50 text-blue-100' : 'bg-slate-800 border-slate-600 text-slate-200',
-                                        filterProduct && i.id !== filterProduct ? 'opacity-30' : 'opacity-100'
-                                    ]" class="px-4 py-3 rounded-xl border flex flex-row items-center font-black uppercase tracking-wide min-w-0 transition-opacity duration-300">
-                                        <div class="flex items-center flex-shrink-0">
-                                            <span class="text-xl mr-2" x-text="i.qty"></span>
-                                            <span class="text-xs sm:text-sm mr-3" x-text="i.isCase ? 'CASE(S)' : 'UNIT(S)'"></span>
-                                        </div>
-                                        <span class="text-xs sm:text-sm truncate flex-grow min-w-0" x-text="i.name"></span>
+                                    <div class="px-4 py-3 rounded-xl border border-slate-600 bg-slate-800 flex items-center font-black uppercase">
+                                        <span class="text-blue-400 mr-2" x-text="i.qty"></span>
+                                        <span class="text-[10px] mr-3" x-text="i.isCase ? 'CASE' : 'UNIT'"></span>
+                                        <span class="text-xs truncate" x-text="i.name"></span>
                                     </div>
                                 </template>
                             </div>
                         </div>
-                        <div class="text-left xl:text-right flex flex-row xl:flex-col items-center xl:items-end justify-between xl:justify-start w-full xl:w-auto min-w-[220px] flex-shrink-0 pt-4 xl:pt-0 border-t border-slate-800 xl:border-none">
-                            <div class="xl:mb-6">
-                                <p class="text-[10px] font-black text-slate-500 uppercase tracking-widest">Total DP Paid</p>
-                                <p class="text-3xl sm:text-4xl font-black text-white tracking-tight">₱<span x-text="log.totalDP.toLocaleString()"></span></p>
-                            </div>
-                            <div class="flex gap-2">
-                                <button @click="generateSlip(log)" class="bg-blue-600 text-white px-4 py-2 rounded-xl font-black text-[10px] uppercase shadow-lg">Slip</button>
-                                <button @click="editLog(log)" class="bg-slate-800 text-white px-4 py-2 rounded-xl font-black text-[10px] uppercase">Edit</button>
-                                <button @click="deleteLog(log.id)" class="text-red-900 hover:text-red-500 px-2"><i class="fas fa-times-circle text-lg"></i></button>
+                        <div class="text-right min-w-[200px]">
+                            <p class="text-[10px] font-black text-slate-500 uppercase tracking-widest">Total DP Paid</p>
+                            <p class="text-3xl font-black text-white mb-4">₱<span x-text="log.totalDP.toLocaleString()"></span></p>
+                            <div class="flex gap-2 justify-end">
+                                <button @click="generateSlip(log)" class="bg-blue-600 text-white px-6 py-3 rounded-xl font-black text-[12px] uppercase shadow-lg shadow-blue-500/20">Generate Slip</button>
+                                <button @click="editLog(log)" class="bg-slate-800 text-white px-4 py-3 rounded-xl font-black text-[10px] uppercase">Edit</button>
+                                <button @click="deleteLog(log.id)" class="text-red-900 hover:text-red-500 px-2"><i class="fas fa-times-circle text-2xl"></i></button>
                             </div>
                         </div>
                     </div>
                 </template>
+            </div>
+        </div>
+    </div>
+
+    <!-- HIDDEN RECEIPT GENERATOR (Uses your new template) -->
+    <div id="receipt-gate">
+        <div id="receipt-canvas" class="bg-white shadow-2xl border border-gray-100 flex flex-col" style="width: 850px; min-height: 800px; color: #0f172a;">
+            <div class="p-10 border-b-2 border-gray-50">
+                <div class="flex items-center justify-center space-x-6">
+                    <div class="flex flex-col items-center border-r-2 border-gray-100 pr-8">
+                        <span class="text-4xl font-black tracking-tighter leading-none text-slate-900">CRATE DROP</span>
+                        <span class="block text-[15px] font-bold text-blue-500 tracking-[0.4em] uppercase -mt-1">COLLECTIVE</span>
+                    </div>
+                    <div class="text-left">
+                        <h1 class="text-3xl font-black text-blue-800 italic tracking-tighter uppercase leading-none">Order <br> Confirmation</h1>
+                    </div>
+                </div>
+            </div>
+
+            <div class="bg-blue-700 text-white px-10 py-3 flex justify-between font-bold text-xs uppercase tracking-widest">
+                <span>Customer: <span x-text="customerName || '----------'" class="ml-2 font-black border-b border-white/40"></span></span>
+                <span>Date: <span x-text="orderDate"></span></span>
+            </div>
+
+            <div class="mx-10 mt-8 flex-grow">
+                <div class="grid grid-cols-12 gap-2 text-blue-800 font-black text-[10px] uppercase border-b-4 border-blue-800 pb-3">
+                    <div class="col-span-1 text-center">Qty.</div>
+                    <div class="col-span-1 text-center">Format</div>
+                    <div class="col-span-4">Product Name</div>
+                    <div class="col-span-2 text-right">Price/Unit</div>
+                    <div class="col-span-2 text-right text-blue-500">DP (30%)</div>
+                    <div class="col-span-2 text-right">Line Total</div>
+                </div>
+
+                <template x-for="(item, index) in orderItems" :key="index">
+                    <div class="grid grid-cols-12 gap-2 text-slate-800 font-bold text-[11px] py-4 border-b border-gray-100 items-center">
+                        <div class="col-span-1 font-black text-lg text-center" x-text="item.qty"></div>
+                        <div class="col-span-1 uppercase text-[8px] text-center text-blue-600 font-black" x-text="item.isCase ? 'CASE' : 'UNIT'"></div>
+                        <div class="col-span-4 uppercase leading-tight">
+                            <span x-text="item.name"></span>
+                            <div class="text-[8px] text-gray-400 mt-1 font-bold" x-text="'ETA: ' + item.eta"></div>
+                        </div>
+                        <div class="col-span-2 text-right text-gray-500">₱<span x-text="item.price.toLocaleString()"></span></div>
+                        <div class="col-span-2 text-right text-blue-600 font-black">₱<span x-text="Math.ceil(item.price * item.qty * 0.3).toLocaleString()"></span></div>
+                        <div class="col-span-2 text-right font-black">₱<span x-text="(item.price * item.qty).toLocaleString()"></span></div>
+                    </div>
+                </template>
+            </div>
+
+            <div class="mx-10 flex flex-col items-end space-y-4 mt-8">
+                <div class="w-full max-w-[380px]">
+                    <div class="flex justify-between text-[10px] font-black text-gray-400 uppercase mb-2 px-2">
+                        <span>Total Combined Order:</span>
+                        <span>₱<span x-text="fullOrderTotal.toLocaleString()"></span></span>
+                    </div>
+                    <div class="bg-blue-700 text-white text-center py-2 font-black text-[11px] uppercase tracking-widest">Total Combined DP Paid (30%)</div>
+                    <div class="text-center font-black text-4xl text-slate-900 py-3 border-x border-b border-gray-100 shadow-sm">
+                        ₱<span x-text="totalDP.toLocaleString()"></span>
+                    </div>
+                </div>
+                <div class="w-full max-w-[380px] mb-8">
+                    <div class="bg-slate-800 text-white text-center py-1.5 font-black text-[10px] uppercase tracking-widest">Combined Balance Remaining</div>
+                    <div class="text-center font-black text-2xl text-slate-700 py-2 border-x border-b border-gray-100 shadow-sm">
+                        ₱<span x-text="totalBalance.toLocaleString()"></span>
+                    </div>
+                </div>
+            </div>
+
+            <div class="px-16 py-10 bg-gray-50 border-t border-gray-100 text-[10px] text-gray-400 text-center leading-relaxed font-semibold italic">
+                By placing a pre-order, you confirm that you have understood the risks of country allocation cuts. Payment for the remaining balance is due within 3 days of allocation confirmation. Cancellations are not allowed, and the 30% deposit is non-refundable.
             </div>
         </div>
     </div>
@@ -192,7 +238,14 @@ function crateDropApp() {
         editingId: null,
         currentLog: { name: '', items: [] },
         itemInput: { id: '', name: '', qty: 1, isCase: false, price: 0, unitsPerCase: 1, eta: 'TBA' },
-        receiptData: { name: '', timestamp: '', items: [], totalOrder: 0, totalDP: 0, totalBalance: 0 },
+        
+        // Variables for the Slip Template
+        customerName: '',
+        orderDate: '',
+        orderItems: [],
+        fullOrderTotal: 0,
+        totalDP: 0,
+        totalBalance: 0,
 
         async init() {
             const saved = localStorage.getItem('cd_master_v2');
@@ -223,65 +276,12 @@ function crateDropApp() {
             return this.logs.filter(l => l.items.some(i => i.id === this.filterProduct));
         },
 
-        get filteredProductTotals() {
-            if (!this.filterProduct) return { units: 0, cases: 0 };
-            let u = 0, c = 0;
-            this.filteredLogs.forEach(l => l.items.forEach(i => {
-                if (i.id === this.filterProduct) {
-                    if (i.isCase) { c += i.qty; u += (i.qty * i.unitsPerCase); }
-                    else { u += i.qty; }
-                }
-            }));
-            return { units: u, cases: c };
-        },
-
-        // --- NEW MULTI-SHEET EXPORT LOGIC ---
-        exportToExcel() {
-            // Sheet 1: Detailed Order Log
-            const orderData = [];
-            this.logs.forEach(l => {
-                l.items.forEach(i => {
-                    orderData.push({
-                        "Date": l.timestamp,
-                        "Customer": l.name,
-                        "Product": i.name,
-                        "Format": i.isCase ? "CASE" : "UNIT",
-                        "Qty Ordered": i.qty,
-                        "Raw Units Total": i.isCase ? (i.qty * i.unitsPerCase) : i.qty,
-                        "Line Total (PHP)": i.price * i.qty,
-                        "DP Paid (30%)": Math.ceil(i.price * i.qty * 0.3),
-                        "Remaining Balance": (i.price * i.qty) - Math.ceil(i.price * i.qty * 0.3)
-                    });
-                });
-            });
-
-            // Sheet 2: Inventory Summary (Aggregated per product)
-            const summaryMap = {};
-            this.logs.forEach(l => {
-                l.items.forEach(i => {
-                    if (!summaryMap[i.id]) {
-                        summaryMap[i.id] = { "Product Name": i.name, "Total Pooled Units": 0, "Total Direct Cases": 0 };
-                    }
-                    if (i.isCase) {
-                        summaryMap[i.id]["Total Direct Cases"] += i.qty;
-                        summaryMap[i.id]["Total Pooled Units"] += (i.qty * i.unitsPerCase);
-                    } else {
-                        summaryMap[i.id]["Total Pooled Units"] += i.qty;
-                    }
-                });
-            });
-            const summaryData = Object.values(summaryMap);
-
-            // Create Workbook
-            const wb = XLSX.utils.book_new();
-            const wsOrders = XLSX.utils.json_to_sheet(orderData);
-            const wsSummary = XLSX.utils.json_to_sheet(summaryData);
-
-            XLSX.utils.book_append_sheet(wb, wsOrders, "Master Order Log");
-            XLSX.utils.book_append_sheet(wb, wsSummary, "Inventory Summary");
-
-            // Write File
-            XLSX.writeFile(wb, `CrateDrop_Master_Report_${new Date().toISOString().split('T')[0]}.xlsx`);
+        addItem() {
+            this.currentLog.items.push({...this.itemInput});
+            this.itemInput.id = '';
+            this.itemInput.qty = 1;
+            this.itemInput.isCase = false; 
+            this.syncItem();
         },
 
         syncItem() {
@@ -294,13 +294,42 @@ function crateDropApp() {
             }
         },
 
-        addItem() {
-            this.currentLog.items.push({...this.itemInput});
-            this.itemInput.id = '';
-            this.itemInput.qty = 1;
+        async generateSlip(log) {
+            // Map the log data to the template variables
+            this.customerName = log.name;
+            this.orderDate = log.timestamp;
+            this.orderItems = log.items;
+            this.fullOrderTotal = log.totalOrder;
+            this.totalDP = log.totalDP;
+            this.totalBalance = log.totalBalance;
+
+            await this.$nextTick(); 
+            
+            const element = document.getElementById('receipt-canvas');
+            const canvas = await html2canvas(element, { scale: 3, backgroundColor: "#ffffff", useCORS: true });
+            
+            const link = document.createElement('a');
+            link.download = `CrateDrop_Slip_${log.name.replace(/\s+/g, '_')}.png`;
+            link.href = canvas.toDataURL("image/png");
+            link.click();
         },
 
-        removeItem(index) { this.currentLog.items.splice(index, 1); },
+        exportToExcel() {
+            const orderData = [];
+            this.logs.forEach(l => {
+                l.items.forEach(i => {
+                    orderData.push({
+                        "Date": l.timestamp, "Customer": l.name, "Product": i.name,
+                        "Format": i.isCase ? "CASE" : "UNIT", "Qty": i.qty,
+                        "Total (PHP)": i.price * i.qty, "DP (30%)": Math.ceil(i.price * i.qty * 0.3)
+                    });
+                });
+            });
+            const wb = XLSX.utils.book_new();
+            const ws = XLSX.utils.json_to_sheet(orderData);
+            XLSX.utils.book_append_sheet(wb, ws, "Orders");
+            XLSX.writeFile(wb, `CrateDrop_Report.xlsx`);
+        },
 
         saveLog() {
             const total = this.currentLog.items.reduce((sum, i) => sum + (i.price * i.qty), 0);
@@ -329,22 +358,12 @@ function crateDropApp() {
             if (confirm('Delete permanently?')) { this.logs = this.logs.filter(l => l.id !== id); this.persist(); }
         },
 
-        async generateSlip(log) {
-            this.receiptData = log;
-            await this.$nextTick();
-            const canvas = await html2canvas(document.getElementById('receipt-canvas'), { scale: 2 });
-            const link = document.createElement('a');
-            link.download = `Slip_${log.name.replace(/\s+/g, '_')}.png`;
-            link.href = canvas.toDataURL();
-            link.click();
-        },
-
+        removeItem(index) { this.currentLog.items.splice(index, 1); },
         resetSession() {
             this.editingId = null;
             this.currentLog = { name: '', items: [] };
             this.itemInput = { id: '', name: '', qty: 1, isCase: false, price: 0, unitsPerCase: 1, eta: 'TBA' };
         },
-
         persist() { localStorage.setItem('cd_master_v2', JSON.stringify(this.logs)); },
         get totalReceivables() { return this.logs.reduce((sum, l) => sum + l.totalDP, 0); },
         clearDB() { if (confirm('Wipe all data?')) { this.logs = []; this.persist(); } }
