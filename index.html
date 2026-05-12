@@ -18,7 +18,6 @@
         ::-webkit-scrollbar { width: 8px; }
         ::-webkit-scrollbar-thumb { background: #334155; border-radius: 10px; }
         
-        /* Ensures the canvas is hidden from the UI but readable by the script */
         #receipt-gate { position: absolute; left: -9999px; top: 0; }
     </style>
 </head>
@@ -46,7 +45,7 @@
 
     <div class="grid grid-cols-1 lg:grid-cols-12 gap-10">
         
-        <!-- LEFT: INPUT SECTION -->
+        <!-- LEFT: INPUT -->
         <div class="lg:col-span-5 space-y-8">
             <div class="glass p-10 rounded-[3rem] shadow-2xl border-t-8 border-blue-500">
                 <h2 class="text-3xl font-black mb-8 flex items-center gap-4">
@@ -110,7 +109,7 @@
             </div>
         </div>
 
-        <!-- RIGHT: DATABASE HISTORY -->
+        <!-- RIGHT: DATABASE -->
         <div class="lg:col-span-7 flex flex-col h-full">
             <div class="flex flex-col sm:flex-row justify-between items-start sm:items-end gap-4 mb-4 px-4 shrink-0">
                 <h3 class="text-2xl font-black text-slate-500 uppercase tracking-widest">Database History</h3>
@@ -157,7 +156,7 @@
         </div>
     </div>
 
-    <!-- HIDDEN RECEIPT GENERATOR (Uses your new template) -->
+    <!-- HIDDEN RECEIPT GENERATOR -->
     <div id="receipt-gate">
         <div id="receipt-canvas" class="bg-white shadow-2xl border border-gray-100 flex flex-col" style="width: 850px; min-height: 800px; color: #0f172a;">
             <div class="p-10 border-b-2 border-gray-50">
@@ -239,7 +238,6 @@ function crateDropApp() {
         currentLog: { name: '', items: [] },
         itemInput: { id: '', name: '', qty: 1, isCase: false, price: 0, unitsPerCase: 1, eta: 'TBA' },
         
-        // Variables for the Slip Template
         customerName: '',
         orderDate: '',
         orderItems: [],
@@ -295,19 +293,15 @@ function crateDropApp() {
         },
 
         async generateSlip(log) {
-            // Map the log data to the template variables
             this.customerName = log.name;
             this.orderDate = log.timestamp;
             this.orderItems = log.items;
             this.fullOrderTotal = log.totalOrder;
             this.totalDP = log.totalDP;
             this.totalBalance = log.totalBalance;
-
             await this.$nextTick(); 
-            
             const element = document.getElementById('receipt-canvas');
             const canvas = await html2canvas(element, { scale: 3, backgroundColor: "#ffffff", useCORS: true });
-            
             const link = document.createElement('a');
             link.download = `CrateDrop_Slip_${log.name.replace(/\s+/g, '_')}.png`;
             link.href = canvas.toDataURL("image/png");
@@ -318,17 +312,26 @@ function crateDropApp() {
             const orderData = [];
             this.logs.forEach(l => {
                 l.items.forEach(i => {
+                    // Restored breakdown logic: If Case, calculate total unit count
+                    const totalUnits = i.isCase ? (i.qty * (i.unitsPerCase || 1)) : i.qty;
+                    
                     orderData.push({
-                        "Date": l.timestamp, "Customer": l.name, "Product": i.name,
-                        "Format": i.isCase ? "CASE" : "UNIT", "Qty": i.qty,
-                        "Total (PHP)": i.price * i.qty, "DP (30%)": Math.ceil(i.price * i.qty * 0.3)
+                        "Date": l.timestamp, 
+                        "Customer": l.name, 
+                        "Product": i.name,
+                        "Format": i.isCase ? "CASE" : "UNIT", 
+                        "Qty Ordered": i.qty,
+                        "Units/Case": i.isCase ? i.unitsPerCase : 1,
+                        "TOTAL UNIT COUNT": totalUnits,
+                        "Line Total (PHP)": i.price * i.qty, 
+                        "DP Collected": Math.ceil(i.price * i.qty * 0.3)
                     });
                 });
             });
             const wb = XLSX.utils.book_new();
             const ws = XLSX.utils.json_to_sheet(orderData);
-            XLSX.utils.book_append_sheet(wb, ws, "Orders");
-            XLSX.writeFile(wb, `CrateDrop_Report.xlsx`);
+            XLSX.utils.book_append_sheet(wb, ws, "Master Order List");
+            XLSX.writeFile(wb, `CrateDrop_Inventory_Breakdown.xlsx`);
         },
 
         saveLog() {
