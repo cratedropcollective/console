@@ -7,7 +7,7 @@
     <script src="https://cdn.tailwindcss.com"></script>
     <script defer src="https://unpkg.com/alpinejs@3.x.x/dist/cdn.min.js"></script>
     <script src="https://cdnjs.cloudflare.com/ajax/libs/html2canvas/1.4.1/html2canvas.min.js"></script>
-    <!-- Fixed SheetJS CDN Link -->
+    <!-- Stable SheetJS CDN -->
     <script src="https://cdn.jsdelivr.net/npm/xlsx@0.18.5/dist/xlsx.full.min.js"></script>
     <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.0.0/css/all.min.css">
     <style>
@@ -309,71 +309,67 @@ function crateDropApp() {
             link.click();
         },
 
-        // FIXED EXCEL LOGIC
+        // UPDATED CONSOLIDATED EXCEL LOGIC
         exportToExcel() {
-            if (this.logs.length === 0) {
-                alert("Database is empty. Nothing to export.");
-                return;
-            }
+            if (this.logs.length === 0) { alert("Database is empty."); return; }
 
             try {
                 const wb = XLSX.utils.book_new();
+                
+                // 1. MASTER LOG SHEET
                 const summaryData = [];
-                const productGroups = {};
+                const productMap = {}; // To group data for the breakdown sheet
 
                 this.logs.forEach(l => {
                     l.items.forEach(i => {
                         const totalUnits = i.isCase ? (i.qty * (i.unitsPerCase || 1)) : i.qty;
+                        
+                        // Populate Master Log rows
                         summaryData.push({
                             "Date": l.timestamp, 
                             "Customer": l.name, 
                             "Product": i.name,
                             "Format": i.isCase ? "CASE" : "UNIT", 
-                            "Qty Ordered": i.qty,
-                            "Units/Case": i.isCase ? i.unitsPerCase : 1,
-                            "TOTAL UNIT COUNT": totalUnits,
-                            "Line Total (PHP)": i.price * i.qty, 
+                            "Qty": i.qty,
+                            "Total Units": totalUnits,
                             "DP Collected": Math.ceil(i.price * i.qty * 0.3)
                         });
 
-                        if (!productGroups[i.name]) productGroups[i.name] = [];
-                        productGroups[i.name].push({
-                            "Customer": l.name,
-                            "Format": i.isCase ? "CASE" : "UNIT",
-                            "Qty Ordered": i.qty,
-                            "Units/Case": i.isCase ? i.unitsPerCase : 1,
-                            "TOTAL UNITS": totalUnits,
-                            "DP Paid": Math.ceil(i.price * i.qty * 0.3),
-                            "Date Logged": l.timestamp
-                        });
+                        // Populate Aggregation Map for Breakdown
+                        if (!productMap[i.name]) productMap[i.name] = {};
+                        if (!productMap[i.name][l.name]) productMap[i.name][l.name] = 0;
+                        productMap[i.name][l.name] += totalUnits;
                     });
                 });
 
                 const wsSummary = XLSX.utils.json_to_sheet(summaryData);
-                XLSX.utils.book_append_sheet(wb, wsSummary, "Overall Summary");
+                XLSX.utils.book_append_sheet(wb, wsSummary, "Master Log");
 
-                const usedNames = new Set();
-                Object.keys(productGroups).forEach(productName => {
-                    const wsProduct = XLSX.utils.json_to_sheet(productGroups[productName]);
-                    // Clean name: remove special chars and limit to 31 chars
-                    let safeName = productName.replace(/[\\/?*[\]]/g, '').substring(0, 31);
+                // 2. CONSOLIDATED BREAKDOWN SHEET
+                const breakdownRows = [];
+                Object.keys(productMap).sort().forEach(prodName => {
+                    // Header Row for Product
+                    breakdownRows.push({ "Product / Customer Breakdown": `📦 ${prodName.toUpperCase()}`, "Total Units Ordered": "" });
                     
-                    // Handle duplicates after truncation (e.g. Set A Part 1, Set A Part 2)
-                    let counter = 1;
-                    let finalName = safeName;
-                    while (usedNames.has(finalName)) {
-                        let suffix = ` (${counter})`;
-                        finalName = safeName.substring(0, 31 - suffix.length) + suffix;
-                        counter++;
-                    }
-                    usedNames.add(finalName);
-                    XLSX.utils.book_append_sheet(wb, wsProduct, finalName);
+                    // List of customers for this product
+                    Object.keys(productMap[prodName]).sort().forEach(customer => {
+                        breakdownRows.push({
+                            "Product / Customer Breakdown": `   - ${customer}`,
+                            "Total Units Ordered": productMap[prodName][customer]
+                        });
+                    });
+
+                    // Space between products
+                    breakdownRows.push({ "Product / Customer Breakdown": "", "Total Units Ordered": "" });
                 });
 
-                XLSX.writeFile(wb, `CrateDrop_Master_Log_${new Date().toLocaleDateString().replace(/\//g, '-')}.xlsx`);
+                const wsBreakdown = XLSX.utils.json_to_sheet(breakdownRows);
+                XLSX.utils.book_append_sheet(wb, wsBreakdown, "Product Breakdown");
+
+                XLSX.writeFile(wb, `CrateDrop_Master_Export_${new Date().toISOString().split('T')[0]}.xlsx`);
             } catch (err) {
-                console.error("Excel Export Error:", err);
-                alert("Failed to export Excel. Check console for details.");
+                console.error("Export Error:", err);
+                alert("Failed to export Excel.");
             }
         },
 
