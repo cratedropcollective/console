@@ -7,7 +7,8 @@
     <script src="https://cdn.tailwindcss.com"></script>
     <script defer src="https://unpkg.com/alpinejs@3.x.x/dist/cdn.min.js"></script>
     <script src="https://cdnjs.cloudflare.com/ajax/libs/html2canvas/1.4.1/html2canvas.min.js"></script>
-    <script src="https://cdn.sheetjs.com/xlsx-0.20.0/package/dist/xlsx.full.min.js"></script>
+    <!-- Fixed SheetJS CDN Link -->
+    <script src="https://cdn.jsdelivr.net/npm/xlsx@0.18.5/dist/xlsx.full.min.js"></script>
     <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.0.0/css/all.min.css">
     <style>
         @import url('https://fonts.googleapis.com/css2?family=Inter:wght@400;600;800;900&display=swap');
@@ -308,58 +309,72 @@ function crateDropApp() {
             link.click();
         },
 
+        // FIXED EXCEL LOGIC
         exportToExcel() {
-            const wb = XLSX.utils.book_new();
-            
-            // 1. GENERATE OVERALL SUMMARY SHEET
-            const summaryData = [];
-            const productGroups = {}; // To store data for individual sheets
+            if (this.logs.length === 0) {
+                alert("Database is empty. Nothing to export.");
+                return;
+            }
 
-            this.logs.forEach(l => {
-                l.items.forEach(i => {
-                    const totalUnits = i.isCase ? (i.qty * (i.unitsPerCase || 1)) : i.qty;
-                    const row = {
-                        "Date": l.timestamp, 
-                        "Customer": l.name, 
-                        "Product": i.name,
-                        "Format": i.isCase ? "CASE" : "UNIT", 
-                        "Qty Ordered": i.qty,
-                        "Units/Case": i.isCase ? i.unitsPerCase : 1,
-                        "TOTAL UNIT COUNT": totalUnits,
-                        "Line Total (PHP)": i.price * i.qty, 
-                        "DP Collected": Math.ceil(i.price * i.qty * 0.3)
-                    };
+            try {
+                const wb = XLSX.utils.book_new();
+                const summaryData = [];
+                const productGroups = {};
 
-                    summaryData.push(row);
+                this.logs.forEach(l => {
+                    l.items.forEach(i => {
+                        const totalUnits = i.isCase ? (i.qty * (i.unitsPerCase || 1)) : i.qty;
+                        summaryData.push({
+                            "Date": l.timestamp, 
+                            "Customer": l.name, 
+                            "Product": i.name,
+                            "Format": i.isCase ? "CASE" : "UNIT", 
+                            "Qty Ordered": i.qty,
+                            "Units/Case": i.isCase ? i.unitsPerCase : 1,
+                            "TOTAL UNIT COUNT": totalUnits,
+                            "Line Total (PHP)": i.price * i.qty, 
+                            "DP Collected": Math.ceil(i.price * i.qty * 0.3)
+                        });
 
-                    // Group by product name for separate sheets
-                    if (!productGroups[i.name]) productGroups[i.name] = [];
-                    productGroups[i.name].push({
-                        "Customer": l.name,
-                        "Format": i.isCase ? "CASE" : "UNIT",
-                        "Qty Ordered": i.qty,
-                        "Units/Case": i.isCase ? i.unitsPerCase : 1,
-                        "TOTAL UNITS": totalUnits,
-                        "DP Paid": Math.ceil(i.price * i.qty * 0.3),
-                        "Date Logged": l.timestamp
+                        if (!productGroups[i.name]) productGroups[i.name] = [];
+                        productGroups[i.name].push({
+                            "Customer": l.name,
+                            "Format": i.isCase ? "CASE" : "UNIT",
+                            "Qty Ordered": i.qty,
+                            "Units/Case": i.isCase ? i.unitsPerCase : 1,
+                            "TOTAL UNITS": totalUnits,
+                            "DP Paid": Math.ceil(i.price * i.qty * 0.3),
+                            "Date Logged": l.timestamp
+                        });
                     });
                 });
-            });
 
-            // Append Overall Summary
-            const wsSummary = XLSX.utils.json_to_sheet(summaryData);
-            XLSX.utils.book_append_sheet(wb, wsSummary, "Overall Summary");
+                const wsSummary = XLSX.utils.json_to_sheet(summaryData);
+                XLSX.utils.book_append_sheet(wb, wsSummary, "Overall Summary");
 
-            // 2. GENERATE PRODUCT BREAKDOWN SHEETS
-            Object.keys(productGroups).forEach(productName => {
-                const wsProduct = XLSX.utils.json_to_sheet(productGroups[productName]);
-                
-                // Excel Sheet names: Max 31 chars, no special chars \ / ? * [ ]
-                const safeName = productName.replace(/[\\/?*[\]]/g, '').substring(0, 31);
-                XLSX.utils.book_append_sheet(wb, wsProduct, safeName);
-            });
+                const usedNames = new Set();
+                Object.keys(productGroups).forEach(productName => {
+                    const wsProduct = XLSX.utils.json_to_sheet(productGroups[productName]);
+                    // Clean name: remove special chars and limit to 31 chars
+                    let safeName = productName.replace(/[\\/?*[\]]/g, '').substring(0, 31);
+                    
+                    // Handle duplicates after truncation (e.g. Set A Part 1, Set A Part 2)
+                    let counter = 1;
+                    let finalName = safeName;
+                    while (usedNames.has(finalName)) {
+                        let suffix = ` (${counter})`;
+                        finalName = safeName.substring(0, 31 - suffix.length) + suffix;
+                        counter++;
+                    }
+                    usedNames.add(finalName);
+                    XLSX.utils.book_append_sheet(wb, wsProduct, finalName);
+                });
 
-            XLSX.writeFile(wb, `CrateDrop_Master_Inventory_Report.xlsx`);
+                XLSX.writeFile(wb, `CrateDrop_Master_Log_${new Date().toLocaleDateString().replace(/\//g, '-')}.xlsx`);
+            } catch (err) {
+                console.error("Excel Export Error:", err);
+                alert("Failed to export Excel. Check console for details.");
+            }
         },
 
         saveLog() {
