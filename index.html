@@ -309,13 +309,16 @@ function crateDropApp() {
         },
 
         exportToExcel() {
-            const orderData = [];
+            const wb = XLSX.utils.book_new();
+            
+            // 1. GENERATE OVERALL SUMMARY SHEET
+            const summaryData = [];
+            const productGroups = {}; // To store data for individual sheets
+
             this.logs.forEach(l => {
                 l.items.forEach(i => {
-                    // Restored breakdown logic: If Case, calculate total unit count
                     const totalUnits = i.isCase ? (i.qty * (i.unitsPerCase || 1)) : i.qty;
-                    
-                    orderData.push({
+                    const row = {
                         "Date": l.timestamp, 
                         "Customer": l.name, 
                         "Product": i.name,
@@ -325,13 +328,38 @@ function crateDropApp() {
                         "TOTAL UNIT COUNT": totalUnits,
                         "Line Total (PHP)": i.price * i.qty, 
                         "DP Collected": Math.ceil(i.price * i.qty * 0.3)
+                    };
+
+                    summaryData.push(row);
+
+                    // Group by product name for separate sheets
+                    if (!productGroups[i.name]) productGroups[i.name] = [];
+                    productGroups[i.name].push({
+                        "Customer": l.name,
+                        "Format": i.isCase ? "CASE" : "UNIT",
+                        "Qty Ordered": i.qty,
+                        "Units/Case": i.isCase ? i.unitsPerCase : 1,
+                        "TOTAL UNITS": totalUnits,
+                        "DP Paid": Math.ceil(i.price * i.qty * 0.3),
+                        "Date Logged": l.timestamp
                     });
                 });
             });
-            const wb = XLSX.utils.book_new();
-            const ws = XLSX.utils.json_to_sheet(orderData);
-            XLSX.utils.book_append_sheet(wb, ws, "Master Order List");
-            XLSX.writeFile(wb, `CrateDrop_Inventory_Breakdown.xlsx`);
+
+            // Append Overall Summary
+            const wsSummary = XLSX.utils.json_to_sheet(summaryData);
+            XLSX.utils.book_append_sheet(wb, wsSummary, "Overall Summary");
+
+            // 2. GENERATE PRODUCT BREAKDOWN SHEETS
+            Object.keys(productGroups).forEach(productName => {
+                const wsProduct = XLSX.utils.json_to_sheet(productGroups[productName]);
+                
+                // Excel Sheet names: Max 31 chars, no special chars \ / ? * [ ]
+                const safeName = productName.replace(/[\\/?*[\]]/g, '').substring(0, 31);
+                XLSX.utils.book_append_sheet(wb, wsProduct, safeName);
+            });
+
+            XLSX.writeFile(wb, `CrateDrop_Master_Inventory_Report.xlsx`);
         },
 
         saveLog() {
